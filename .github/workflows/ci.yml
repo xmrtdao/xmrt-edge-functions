@@ -1,0 +1,42 @@
+name: Edge Functions CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type check all functions
+        run: |
+          for dir in */; do
+            if [ -f "$dir/index.ts" ]; then
+              echo "Checking $dir..."
+              deno check "$dir/index.ts"
+            fi
+          done
+
+      - name: Validate function structure
+        run: |
+          for dir in */; do
+            if [ -d "$dir" ] && [ "$dir" != ".github/" ]; then
+              if [ -f "$dir/index.ts" ]; then
+                echo "✓ $dir has index.ts"
+              else
+                echo "⚠ $dir missing index.ts"
+              fi
+            fi
+          done
+
+      - name: Check deployment script
+        run: test -f xmrt-edge-deploy.sh && echo "Deploy script OK"
