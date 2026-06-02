@@ -1,0 +1,86 @@
+name: Release Automation
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+          body: |
+            ## XMRT DAO Edge Functions Release
+            
+            Auto-generated release for ${{ github.ref }}.
+            
+            ### Functions Included
+            - agent-heartbeat
+            - register-agent
+            - task-status-update
+            
+            See [DEPLOY.md](DEPLOY.md) for deployment instructions.
+
+  package-functions:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Bundle functions
+        run: |
+          mkdir -p bundled
+          for dir in */; do
+            if [ -f "$dir/index.ts" ] && [ "$dir" != ".github/" ]; then
+              FUNC_NAME=$(basename $dir)
+              deno bundle "$dir/index.ts" "bundled/${FUNC_NAME}.js"
+              echo "✓ Bundled $FUNC_NAME"
+            fi
+          done
+
+      - name: Upload bundled functions
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./bundled
+          asset_name: edge-functions-bundled.zip
+          asset_content_type: application/zip
+
+      - name: Generate changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            git log ${PREV_TAG}..HEAD --pretty=format:"- %s" > CHANGELOG.md
+          else
+            git log --pretty=format:"- %s" > CHANGELOG.md
+          fi
+          cat CHANGELOG.md
+
+      - name: Upload CHANGELOG.md
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./CHANGELOG.md
+          asset_name: CHANGELOG.md
+          asset_content_type: text/markdown
